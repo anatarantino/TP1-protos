@@ -29,7 +29,7 @@ typedef struct line_parser{
     int length;
     line_state state;
     uint8_t command[MAX_COMMAND_LENGTH+1];           
-    uint8_t argument[MAX_COMMAND_LENGTH-3+1];  
+    uint8_t argument[MAX_LINE_LENGTH-MAX_COMMAND_LENGTH-1+1];  
 }line_parser_t;
 
 

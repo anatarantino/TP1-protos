@@ -22,15 +22,12 @@ enum line_state parser_feed(line_parser_t *p, uint8_t c){
     enum line_state next;
     switch (p->state){
     case command_state:
-        printf("Estoy en el estado: 0\n");
         next = command_method(p,c);
         break;
     case argument_state:
-       // printf("Estoy en el estado: 1\n");
         next = argument_method(p,c);
         break;
     case almost_done_state:
-        printf("Estoy en el estado: 2\n");
         next = almost_done_method(p,c);
         break;
     case done_state:
@@ -38,9 +35,6 @@ enum line_state parser_feed(line_parser_t *p, uint8_t c){
         break;
     case error_state:
     case error_command:
-        printf("Estoy en el estado: 3\n");
-        break;
-    default:
         next = error_state;
         break;
     }
@@ -66,7 +60,6 @@ static enum line_state get_method(line_parser_t *p){
     char * command = (char *) p->command;
     if(strcmp(command,"ECHO") == 0){
         printf("Estoy en echo\n");
-        printf("%d",MAX_LINE_LENGTH);
         p->length = MAX_LINE_LENGTH - MAX_COMMAND_LENGTH - 1; //1 space
         return argument_state;
     }else if(strcmp(command,"GET") == 0){
@@ -78,9 +71,7 @@ static enum line_state get_method(line_parser_t *p){
 }
 
 static enum line_state argument_method(line_parser_t *p, uint8_t c){
-    //printf("Command: %s\n", p->command);
-    //printf("index: %d",p->index);
-    if(p->index < p->length){
+    if(p->index < p->length-1){
         if(IS_USASCII(c)){
             p->argument[p->index++]=c;
             if(c == '\r'){
@@ -88,8 +79,7 @@ static enum line_state argument_method(line_parser_t *p, uint8_t c){
             }
             return argument_state;
         }
-    }else if(p->index == p->length-20){
-        printf("Length: %d",p->length);
+    }else if(p->index == p->length-1){
         p->argument[p->index++]='\r';
         p->argument[p->index++]='\n';
         p->argument[p->index]=0;
