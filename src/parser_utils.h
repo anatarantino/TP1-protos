@@ -9,6 +9,9 @@
  */
 #include "parser.h"
 
+#define IS_ALPHA(x) (((x) >= 'a' && (x) <= 'z') || ((x) >= 'A' && (x) <= 'Z'))
+#define IS_USASCII(x) ((x)>= 0 && (x)<=127)
+
 enum string_cmp_event_types {
     STRING_CMP_MAYEQ,
     /** hay posibilidades de que el string sea igual */
