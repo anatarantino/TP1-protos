@@ -8,8 +8,8 @@ static enum line_state get_method(line_parser_t *p);
 static enum line_state argument_method(line_parser_t *p, uint8_t c);
 static enum line_state almost_done_method(line_parser_t *p, uint8_t c);
 
+
 void parser_init(line_parser_t *p){
-    printf("Entre al init\n");
     if(p!=NULL){
         memset(p,0,sizeof(*p));
         p->state = command_state;
@@ -35,9 +35,14 @@ enum line_state parser_feed(line_parser_t *p, uint8_t c){
         break;
     case error_state:
     case error_command:
+        next = p->state;
+        break;
+       
+    default: 
         next = error_state;
         break;
     }
+    
     return p->state = next;
 }
 
@@ -47,11 +52,11 @@ static enum line_state command_method(line_parser_t *p, uint8_t c){
             p->command[p->index++]=toupper(c);
             return command_state;
         }else if(c == ' '){
-            printf("entre");
             p->command[p->index]=0;
             p->index = 0;
             return get_method(p);
         }
+    
     }
     return error_command;
 }
@@ -75,6 +80,7 @@ static enum line_state argument_method(line_parser_t *p, uint8_t c){
         if(IS_USASCII(c)){
             p->argument[p->index++]=c;
             if(c == '\r'){
+                printf("entre al de barra r\n");
                 return almost_done_state;
             }
             return argument_state;
@@ -83,6 +89,7 @@ static enum line_state argument_method(line_parser_t *p, uint8_t c){
         p->argument[p->index++]='\r';
         p->argument[p->index++]='\n';
         p->argument[p->index]=0;
+        printf("llegue a la igualdad\n");
         return done_state;
     }
     return error_state;
@@ -90,6 +97,8 @@ static enum line_state argument_method(line_parser_t *p, uint8_t c){
 
 static enum line_state almost_done_method(line_parser_t *p, uint8_t c){
     if(c == '\n'){
+        p->argument[p->index++] = '\n';
+        p->argument[p->index] = 0;
         return done_state;
     }else if(c == '\r'){
         return almost_done_state;
@@ -100,4 +109,5 @@ static enum line_state almost_done_method(line_parser_t *p, uint8_t c){
     }
     return error_state;
 }
+
 

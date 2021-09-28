@@ -1,11 +1,11 @@
 .PHONY=clean all
 COMPILER=gcc
 CFLAGS = -Wall -fsanitize=address -g
-all:  tcpEchoClient echoServer udpEchoClient
+all:  tcpEchoClient echoServer udpEchoClient 
 clean:	
 	- rm -f *.o   tcpEchoclient echoServer udpEchoClient
 
-COMMON =  logger.c util.c
+COMMON =  logger.c util.c commandParser.c
 
 tcpEchoClient:      
 	$(COMPILER) $(CFLAGS) -o tcpEchoClient tcpEchoClient.c tcpClientUtil.c $(COMMON)

@@ -11,6 +11,7 @@
 #include <sys/time.h> 
 #include "logger.h"
 #include "tcpServerUtil.h"
+#include "commandParser.h"
 
 #define max(n1,n2)     ((n1)>(n2) ? (n1) : (n2))
 
@@ -47,6 +48,7 @@ int udpSocket(int port);
   */
 void handleAddrInfo(int socket);
 
+static enum line_state parseMessage(char * buffer, char * buffer_aux);
 
 int main(int argc , char *argv[])
 {
@@ -62,6 +64,8 @@ int main(int argc , char *argv[])
 	socklen_t clntAddrLen = sizeof(clntAddr);
 
 	char buffer[BUFFSIZE + 1];  //data buffer of 1K
+
+	char buffer_aux[100];
 
 	//set of socket descriptors
 	fd_set readfds;
@@ -255,13 +259,16 @@ int main(int argc , char *argv[])
 				else {
 					log(DEBUG, "Received %zu bytes from socket %d\n", valread, sd);
 					// activamos el socket para escritura y almacenamos en el buffer de salida
-					FD_SET(sd, &writefds);
-
+									
 					// Tal vez ya habia datos en el buffer
 					// TODO: validar realloc != NULL
-					bufferWrite[i].buffer = realloc(bufferWrite[i].buffer, bufferWrite[i].len + valread);
-					memcpy(bufferWrite[i].buffer + bufferWrite[i].len, buffer, valread);
-					bufferWrite[i].len += valread;
+					parseMessage(buffer,buffer_aux);
+					int len = strlen(buffer_aux);
+					FD_SET(sd, &writefds);
+					bufferWrite[i].buffer = realloc(bufferWrite[i].buffer, bufferWrite[i].len + len);
+					memcpy(bufferWrite[i].buffer + bufferWrite[i].len, buffer_aux, len);
+					bufferWrite[i].len += len;
+					
 				}
 			}
 		}
@@ -404,5 +411,73 @@ void handleAddrInfo(int socket) {
 
 	log(DEBUG, "UDP sent:%s", bufferOut );
 
+}
+
+static enum line_state parseMessage(char * buffer, char * buffer_aux){
+	// line_parser_t * p = malloc(sizeof(*p));
+	// enum line_state state;
+    // parser_init(p);
+	// int error = 0;
+    // for(int i=0; i<buffer->len && i<MAX_LINE_LENGTH && !error; i++){
+	// 	state = parser_feed(p,buffer->buffer[i]);
+
+	// 	if(state == error_command || state == error_state){
+	// 		error = 1;
+	// 	}
+      
+    // }
+
+
+	// // if(state == error_command || state == error_state){
+	// // 	printf("entre a los errores :DDD");
+	// // 		const char ans[] = "invalid command\n";
+	// // 		// p->length = strlen(ans) + 1;
+	// // 		// int i;
+	// // 		// for(i=0 ; i<strlen(ans) ; i++){
+	// // 		// 	buffer->buffer[i]=ans[i];
+	// // 		// }
+	// // 		// buffer->buffer[i]=0;
+	// // 		memcpy(buffer->buffer,ans,strlen(ans)+1);
+	// // 		buffer->len = strlen(buffer->buffer);
+
+	
+
+	// // }else{
+	// 	//printf("en el argument tengo: %s\n",p->argument);
+	// 	memcpy(buffer->buffer,(char *)p->argument,strlen((char *)p->argument)+1);
+    // 	buffer->len = strlen((char *)p->argument);
+	// //}
+
+    // free(p);
+    // return state;
+
+	//------------------------ UN ANTES Y UN DESPUES --------------------
+
+	line_parser_t * p = malloc(sizeof(*p));
+    parser_init(p);
+    enum line_state state;
+    for(int i=0; i<strlen(buffer) && i<MAX_LINE_LENGTH; i++){
+       // printf("%c\n", c[i]);
+        state = parser_feed(p,buffer[i]);
+       if(state == error_command || state == error_state){
+           printf("error\n");
+           
+           break;
+       }
+        
+    }
+
+    if(state != done_state){
+        strcpy((char *)p->argument,"invalid command\n");
+    }
+	printf("el buffer antes es: %s\n",buffer);
+    printf("termine en el estado: %d\n",state);
+    printf("el argument quedo: %s",p->argument);
+
+	strcpy(buffer_aux,(char *)p->argument);
+	
+	printf("el buffer_aux quedo: %s\n",buffer_aux);
+    free(p);
+	return state;
 }
 
