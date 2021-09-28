@@ -17,16 +17,17 @@
 
 #define TRUE   1
 #define FALSE  0
-#define PORT 9999
+#define PORT 9996
 #define MAX_SOCKETS 30
 #define BUFFSIZE 1024
-#define PORT_UDP 9999
+#define PORT_UDP 9996
 #define MAX_PENDING_CONNECTIONS   3    // un valor bajo, para realizar pruebas
 
 struct buffer {
 	char * buffer;
 	size_t len;     // longitud del buffer
 	size_t from;    // desde donde falta escribir
+	size_t is_done;
 };
 
 /**
@@ -226,30 +227,24 @@ int main(int argc , char *argv[])
 		}
 
 		for(i =0; i < max_clients; i++) {
-			sd = client_socket[i];
-
-			if (FD_ISSET(sd, &writefds)) {
-				if(bufferWrite[i].len >= 100 || (bufferWrite[i].len >1 && bufferWrite[i].buffer[bufferWrite[i].len-1] == '\n' && bufferWrite[i].buffer[bufferWrite[i].len-2] == '\r')){
-					enum line_state state = parseMessage(bufferWrite + i);
-					if(state == done_state){
-						bufferWrite[i].from = 5;
-						if(bufferWrite[i].len > 100){
-							bufferWrite[i].buffer[98] = '\r';
-							bufferWrite[i].buffer[99] = '\n';
-							bufferWrite[i].len = 100;
-						}
-						handleWrite(sd, bufferWrite + i, &writefds);
-					}else{
-						clear(bufferWrite + i);
-						FD_CLR(sd, &writefds);
-					}
-				}else{
-					clear(bufferWrite + i);
-					FD_CLR(sd, &writefds);
-				}
-				
-		}
-	}
+            sd = client_socket[i];
+            if (FD_ISSET(sd, &writefds) && bufferWrite[i].is_done) {
+                enum line_state state = parseMessage(bufferWrite + i);
+                if(state == done_state){
+                    bufferWrite[i].from = 5;
+                    if(bufferWrite[i].len > 100){
+                        bufferWrite[i].buffer[98] = '\r';
+                        bufferWrite[i].buffer[99] = '\n';
+                        bufferWrite[i].len = 100;
+                    }
+					
+                    handleWrite(sd, bufferWrite + i, &writefds);
+                }else{
+                    clear(bufferWrite + i);
+                    FD_CLR(sd, &writefds);
+                }
+            }
+        }
 
 		//else its some IO operation on some other socket :)
 		for (i = 0; i < max_clients; i++) 
@@ -272,6 +267,7 @@ int main(int argc , char *argv[])
 					FD_CLR(sd, &writefds);
 					// Limpiamos el buffer asociado, para que no lo "herede" otra sesión
 					clear(bufferWrite + i);
+					printf("entre al caso read<=0\n");
 				}
 				else {
 					log(DEBUG, "Received %zu bytes from socket %d\n", valread, sd);
@@ -279,11 +275,13 @@ int main(int argc , char *argv[])
 									
 					// Tal vez ya habia datos en el buffer
 					// TODO: validar realloc != NULL
-
 					FD_SET(sd, &writefds);
 					bufferWrite[i].buffer = realloc(bufferWrite[i].buffer, bufferWrite[i].len + valread);
 					memcpy(bufferWrite[i].buffer + bufferWrite[i].len, buffer, valread);
 					bufferWrite[i].len += valread;
+					if(bufferWrite[i].len > 1 && bufferWrite[i].buffer[bufferWrite[i].len-1] == '\n' && bufferWrite[i].buffer[bufferWrite[i].len-2] == '\r'){
+						bufferWrite[i].is_done = 1;
+					}
 				}
 			}
 		}
@@ -296,6 +294,7 @@ void clear( struct buffer * buffer) {
 	free(buffer->buffer);
 	buffer->buffer = NULL;
 	buffer->from = buffer->len = 0;
+	buffer->is_done = 0;
 }
 
 // Hay algo para escribir?
@@ -467,7 +466,14 @@ static enum line_state parseMessage(struct buffer * buffer){
     // return state;
 
 	//------------------------ UN ANTES Y UN DESPUES --------------------
-
+	printf("dentro del parser recibi: %zu bytes y es:\n",buffer->len);
+	for (int j=buffer->from ; j<buffer->len ; j++){
+		putchar(buffer->buffer[j]);
+	}
+	putchar('\n');
+	if(buffer->buffer[0]=='\r'){
+		printf("encontre un /r\n");
+	}
 	line_parser_t * p = malloc(sizeof(*p));
     parser_init(p);
     enum line_state state;
