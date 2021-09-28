@@ -20,6 +20,7 @@ void parser_init(line_parser_t *p){
 
 enum line_state parser_feed(line_parser_t *p, uint8_t c){
     enum line_state next;
+    
     switch (p->state){
     case command_state:
         next = command_method(p,c);
@@ -64,11 +65,9 @@ static enum line_state command_method(line_parser_t *p, uint8_t c){
 static enum line_state get_method(line_parser_t *p){
     char * command = (char *) p->command;
     if(strcmp(command,"ECHO") == 0){
-        printf("Estoy en echo\n");
         p->length = MAX_LINE_LENGTH - MAX_COMMAND_LENGTH - 1; //1 space
         return argument_state;
     }else if(strcmp(command,"GET") == 0){
-        printf("Estoy en get\n");
         p->length = MAX_LINE_LENGTH - MAX_COMMAND_LENGTH - 1 - 1; //1 space / 1 get<echo
         return argument_state;
     }
@@ -80,7 +79,6 @@ static enum line_state argument_method(line_parser_t *p, uint8_t c){
         if(IS_USASCII(c)){
             p->argument[p->index++]=c;
             if(c == '\r'){
-                printf("entre al de barra r\n");
                 return almost_done_state;
             }
             return argument_state;
@@ -89,7 +87,6 @@ static enum line_state argument_method(line_parser_t *p, uint8_t c){
         p->argument[p->index++]='\r';
         p->argument[p->index++]='\n';
         p->argument[p->index]=0;
-        printf("llegue a la igualdad\n");
         return done_state;
     }
     return error_state;

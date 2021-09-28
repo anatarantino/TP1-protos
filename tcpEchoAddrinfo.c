@@ -48,7 +48,7 @@ int udpSocket(int port);
   */
 void handleAddrInfo(int socket);
 
-static enum line_state parseMessage(char * buffer, char * buffer_aux);
+static enum line_state parseMessage(struct buffer * buffer);
 
 int main(int argc , char *argv[])
 {
@@ -65,7 +65,6 @@ int main(int argc , char *argv[])
 
 	char buffer[BUFFSIZE + 1];  //data buffer of 1K
 
-	char buffer_aux[100];
 
 	//set of socket descriptors
 	fd_set readfds;
@@ -230,9 +229,27 @@ int main(int argc , char *argv[])
 			sd = client_socket[i];
 
 			if (FD_ISSET(sd, &writefds)) {
-				handleWrite(sd, bufferWrite + i, &writefds);
-			}
+				if(bufferWrite[i].len >= 100 || (bufferWrite[i].len >1 && bufferWrite[i].buffer[bufferWrite[i].len-1] == '\n' && bufferWrite[i].buffer[bufferWrite[i].len-2] == '\r')){
+					enum line_state state = parseMessage(bufferWrite + i);
+					if(state == done_state){
+						bufferWrite[i].from = 5;
+						if(bufferWrite[i].len > 100){
+							bufferWrite[i].buffer[98] = '\r';
+							bufferWrite[i].buffer[99] = '\n';
+							bufferWrite[i].len = 100;
+						}
+						handleWrite(sd, bufferWrite + i, &writefds);
+					}else{
+						clear(bufferWrite + i);
+						FD_CLR(sd, &writefds);
+					}
+				}else{
+					clear(bufferWrite + i);
+					FD_CLR(sd, &writefds);
+				}
+				
 		}
+	}
 
 		//else its some IO operation on some other socket :)
 		for (i = 0; i < max_clients; i++) 
@@ -262,13 +279,11 @@ int main(int argc , char *argv[])
 									
 					// Tal vez ya habia datos en el buffer
 					// TODO: validar realloc != NULL
-					parseMessage(buffer,buffer_aux);
-					int len = strlen(buffer_aux);
+
 					FD_SET(sd, &writefds);
-					bufferWrite[i].buffer = realloc(bufferWrite[i].buffer, bufferWrite[i].len + len);
-					memcpy(bufferWrite[i].buffer + bufferWrite[i].len, buffer_aux, len);
-					bufferWrite[i].len += len;
-					
+					bufferWrite[i].buffer = realloc(bufferWrite[i].buffer, bufferWrite[i].len + valread);
+					memcpy(bufferWrite[i].buffer + bufferWrite[i].len, buffer, valread);
+					bufferWrite[i].len += valread;
 				}
 			}
 		}
@@ -413,7 +428,7 @@ void handleAddrInfo(int socket) {
 
 }
 
-static enum line_state parseMessage(char * buffer, char * buffer_aux){
+static enum line_state parseMessage(struct buffer * buffer){
 	// line_parser_t * p = malloc(sizeof(*p));
 	// enum line_state state;
     // parser_init(p);
@@ -456,28 +471,19 @@ static enum line_state parseMessage(char * buffer, char * buffer_aux){
 	line_parser_t * p = malloc(sizeof(*p));
     parser_init(p);
     enum line_state state;
-    for(int i=0; i<strlen(buffer) && i<MAX_LINE_LENGTH; i++){
+    for(int i=0; i<buffer->len && i<MAX_LINE_LENGTH; i++){
        // printf("%c\n", c[i]);
-        state = parser_feed(p,buffer[i]);
+        state = parser_feed(p,buffer->buffer[i]);
        if(state == error_command || state == error_state){
            printf("error\n");
-           
            break;
        }
         
     }
 
-    if(state != done_state){
-        strcpy((char *)p->argument,"invalid command\n");
-    }
-	printf("el buffer antes es: %s\n",buffer);
-    printf("termine en el estado: %d\n",state);
-    printf("el argument quedo: %s",p->argument);
-
-	strcpy(buffer_aux,(char *)p->argument);
+  printf("termine en el estado: %d\n",state);
 	
-	printf("el buffer_aux quedo: %s\n",buffer_aux);
-    free(p);
+  free(p);
 	return state;
 }
 
