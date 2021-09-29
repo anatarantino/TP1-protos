@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/time.h> 
+#include <ctype.h>
 #include <time.h>
 #include "logger.h"
 #include "tcpServerUtil.h"
@@ -51,12 +52,16 @@ int udpSocket(int port);
 /**
   Lee el datagrama del socket, obtiene info asociado con getaddrInfo y envia la respuesta
   */
-void handleAddrInfo(int socket);
+void handleUdp(int socket);
 
 int getTime(char * time_buffer);
 int getDate(char * date_buffer, char * format);
+void toLowerString(char * str);
 
 static enum line_state parseMessage(struct buffer * buffer, int * command);
+
+//Para stats
+int connections = 0, incorrectLines = 0, correctLines = 0, incorrectDatagrams = 0;
 
 int main(int argc , char *argv[])
 {
@@ -218,7 +223,7 @@ int main(int argc , char *argv[])
 
 		// Servicio UDP
 		if(FD_ISSET(udpSock, &readfds)) {
-			handleAddrInfo(udpSock);
+			handleUdp(udpSock);
 		}
 
 		//If something happened on the TCP master socket , then its an incoming connection
@@ -238,6 +243,7 @@ int main(int argc , char *argv[])
 					// if position is empty
 					if( client_socket[i] == 0 )
 					{
+						connections++;
 						client_socket[i] = new_socket;
 						log(DEBUG, "Adding to list of sockets as %d\n" , i);
 						break;
@@ -247,44 +253,47 @@ int main(int argc , char *argv[])
 		}
 
 		for(i =0; i < max_clients; i++) {
-            sd = client_socket[i];
-            if (FD_ISSET(sd, &writefds) && (bufferWrite[i].is_done || bufferWrite[i].len > 100)) {
-                enum line_state state = parseMessage(bufferWrite + i,&bufferWrite[i].command );
-                if(state == done_state){
+			sd = client_socket[i];
+			if (FD_ISSET(sd, &writefds) && (bufferWrite[i].is_done || bufferWrite[i].len > 100)) {
+				enum line_state state = parseMessage(bufferWrite + i,&bufferWrite[i].command );
+				if(state == done_state){
 					switch (bufferWrite[i].command)
 					{
-					case ECHO:
+						case ECHO:
 						bufferWrite[i].from = 5;
+						correctLines++;
 						if(bufferWrite[i].len > 100){
 							bufferWrite[i].buffer[98] = '\r';
 							bufferWrite[i].buffer[99] = '\n';
 							bufferWrite[i].len = 100;
 						}
 						break;
-					case GET_DATE:
+						case GET_DATE:
 						if(getDate(date_buffer,default_date_format)!=-1){
 							bufferWrite[i].buffer = realloc(bufferWrite[i].buffer,sizeof(date_buffer));
 							memcpy(bufferWrite[i].buffer, date_buffer,sizeof(date_buffer));
 							bufferWrite[i].len = sizeof(date_buffer);
 						}
-						
+						correctLines++;
 						break;
-					case GET_TIME:
+						case GET_TIME:
 						if(getTime(time_buffer)!=-1){
 							strcpy(bufferWrite[i].buffer, time_buffer);
 						}
+						correctLines++;
 						break;
-					default:
+						default:
 						break;
 					}
 					
-                    handleWrite(sd, bufferWrite + i, &writefds);
-                }else{
-                    clear(bufferWrite + i);
-                    FD_CLR(sd, &writefds);
-                }
-            }
-        }
+					handleWrite(sd, bufferWrite + i, &writefds);
+				}else{
+					incorrectLines++;
+					clear(bufferWrite + i);
+					FD_CLR(sd, &writefds);
+				}
+			}
+		}
 
 		//else its some IO operation on some other socket :)
 		for (i = 0; i < max_clients; i++) 
@@ -311,7 +320,7 @@ int main(int argc , char *argv[])
 				else {
 					log(DEBUG, "Received %zu bytes from socket %d\n", valread, sd);
 					// activamos el socket para escritura y almacenamos en el buffer de salida
-									
+
 					// Tal vez ya habia datos en el buffer
 					// TODO: validar realloc != NULL
 					FD_SET(sd, &writefds);
@@ -394,7 +403,7 @@ int udpSocket(int port) {
 }
 
 
-void handleAddrInfo(int socket) {
+void handleUdp(int socket) {
 	// En el datagrama viene el nombre a resolver
 	// Se le devuelve la informacion asociada
 
@@ -405,86 +414,46 @@ void handleAddrInfo(int socket) {
 
 	// Es bloqueante, deberian invocar a esta funcion solo si hay algo disponible en el socket    
 	n = recvfrom(socket, buffer, BUFFSIZE, 0, ( struct sockaddr *) &clntAddr, &len);
-	if ( buffer[n-1] == '\n') // Por si lo estan probando con netcat, en modo interactivo
+	if (n>1 && buffer[n-1] == '\n') // Por si lo estan probando con netcat, en modo interactivo
 		n--;
 	buffer[n] = '\0';
 	log(DEBUG, "UDP received:%s", buffer );
-	// TODO: parsear lo recibido para obtener nombre, puerto, etc. Asumimos viene solo el nombre
 
-	// Especificamos solo SOCK_STREAM para que no duplique las respuestas
-	struct addrinfo addrCriteria;                   // Criteria for address match
-	memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
-	addrCriteria.ai_family = AF_UNSPEC;             // Any address family
-	addrCriteria.ai_socktype = SOCK_STREAM;         // Only stream sockets
-	addrCriteria.ai_protocol = IPPROTO_TCP;         // Only TCP protocol
+	toLowerString(buffer);
 
-
-	// Armamos el datagrama con las direcciones de respuesta, separadas por \r\n
-	// TODO: hacer una concatenacion segura
-	// TODO: modificar la funcion printAddressInfo usada en sockets bloqueantes para que sirva
-	//       tanto si se quiere obtener solo la direccion o la direccion mas el puerto
 	char bufferOut[BUFFSIZE];
 	bufferOut[0] = '\0';
 
-	struct addrinfo *addrList;
-	int rtnVal = getaddrinfo(buffer, NULL, &addrCriteria, &addrList);
-	if (rtnVal != 0) {
-		log(ERROR, "getaddrinfo() failed: %d: %s", rtnVal, gai_strerror(rtnVal));
-		strcat(strcpy(bufferOut,"Can't resolve "), buffer);
+	if(strcmp(buffer, "stats") == 0){
 
-	} else {
-		for (struct addrinfo *addr = addrList; addr != NULL; addr = addr->ai_next) {
-			struct sockaddr *address = addr->ai_addr;
-			char addrBuffer[INET6_ADDRSTRLEN];
-
-			void *numericAddress = NULL;
-			switch (address->sa_family) {
-				case AF_INET:
-					numericAddress = &((struct sockaddr_in *) address)->sin_addr;
-					break;
-				case AF_INET6:
-					numericAddress = &((struct sockaddr_in6 *) address)->sin6_addr;
-					break;
-			}
-			if ( numericAddress == NULL) {
-				strcat(bufferOut, "[Unknown Type]");
-			} else {
-				// Convert binary to printable address
-				if (inet_ntop(address->sa_family, numericAddress, addrBuffer, sizeof(addrBuffer)) == NULL)
-					strcat(bufferOut, "[invalid address]");
-				else {
-					strcat(bufferOut, addrBuffer);
-				}
-			}
-			strcat(bufferOut, "\r\n");
-		}
-		freeaddrinfo(addrList);
+		sprintf(bufferOut, "--STATS--\r\nTotal connections: %d\r\nIncorrect lines: %d\r\nCorrect lines: %d\r\nIncorrect datagrams: %d\r\n", connections, incorrectLines, correctLines, incorrectDatagrams);
+		sendto(socket, bufferOut, strlen(bufferOut), 0, (const struct sockaddr *) &clntAddr, sizeof(clntAddr));
+		log(DEBUG, "UDP sent:%s", bufferOut );
+	}else{
+		incorrectDatagrams++;
 	}
 
-	// Enviamos respuesta (el sendto no bloquea)
-	sendto(socket, bufferOut, strlen(bufferOut), 0, (const struct sockaddr *) &clntAddr, len);
-
-	log(DEBUG, "UDP sent:%s", bufferOut );
+	
 
 }
 
 static enum line_state parseMessage(struct buffer * buffer, int * command){
 	
 	line_parser_t * p = malloc(sizeof(*p));
-    parser_init(p);
-    enum line_state state;
-    for(int i=0; i<buffer->len && i<MAX_LINE_LENGTH; i++){
-        state = parser_feed(p,buffer->buffer[i]);
-       if(state == error_command || state == error_state){
-           break;
-       }
-        
-    }
+	parser_init(p);
+	enum line_state state;
+	for(int i=0; i<buffer->len && i<MAX_LINE_LENGTH; i++){
+		state = parser_feed(p,buffer->buffer[i]);
+		if(state == error_command || state == error_state){
+			break;
+		}
+
+	}
 	if(p->state == done_state){
 		*command = p->current_command;
 	}
 	
-  	free(p);
+	free(p);
 	return state;
 }
 
@@ -513,4 +482,12 @@ int getDate(char * date_buffer, char * format){
 		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mon+1,time_info->tm_mday,time_info->tm_year+1900);
 	}
 	return bytes_read;
+}
+
+void toLowerString(char * str){
+	int len = strlen(str);
+
+	for(int i =0; i<len; i++){
+		str[i]=tolower(str[i]);
+	}
 }
