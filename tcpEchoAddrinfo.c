@@ -81,8 +81,8 @@ int main(int argc , char *argv[])
 
 	log(DEBUG,"Setting port to %d",port);
 
-	struct sockaddr_storage clntAddr; // Client address
-	socklen_t clntAddrLen = sizeof(clntAddr);
+	//struct sockaddr_storage clntAddr; // Client address
+	//socklen_t clntAddrLen = sizeof(clntAddr);
 
 	char buffer[BUFFSIZE + 1];  //data buffer of 1K
 
@@ -248,7 +248,7 @@ int main(int argc , char *argv[])
 
 		for(i =0; i < max_clients; i++) {
             sd = client_socket[i];
-            if (FD_ISSET(sd, &writefds) && bufferWrite[i].is_done) {
+            if (FD_ISSET(sd, &writefds) && (bufferWrite[i].is_done || bufferWrite[i].len > 100)) {
                 enum line_state state = parseMessage(bufferWrite + i,&bufferWrite[i].command );
                 if(state == done_state){
 					switch (bufferWrite[i].command)
