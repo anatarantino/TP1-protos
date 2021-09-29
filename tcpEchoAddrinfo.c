@@ -315,11 +315,12 @@ int main(int argc , char *argv[])
 					// Tal vez ya habia datos en el buffer
 					// TODO: validar realloc != NULL
 					FD_SET(sd, &writefds);
-					bufferWrite[i].buffer = realloc(bufferWrite[i].buffer, bufferWrite[i].len + valread);
-					memcpy(bufferWrite[i].buffer + bufferWrite[i].len, buffer, valread);
-					bufferWrite[i].len += valread;
-					if(bufferWrite[i].len > 1 && bufferWrite[i].buffer[bufferWrite[i].len-1] == '\n' && bufferWrite[i].buffer[bufferWrite[i].len-2] == '\r'){
-						bufferWrite[i].is_done = 1;
+					if((bufferWrite[i].buffer = realloc(bufferWrite[i].buffer, bufferWrite[i].len + valread))!=NULL){
+						memcpy(bufferWrite[i].buffer + bufferWrite[i].len, buffer, valread);
+						bufferWrite[i].len += valread;
+						if(bufferWrite[i].len > 1 && bufferWrite[i].buffer[bufferWrite[i].len-1] == '\n' && bufferWrite[i].buffer[bufferWrite[i].len-2] == '\r'){
+							bufferWrite[i].is_done = 1;
+						}
 					}
 				}
 			}
