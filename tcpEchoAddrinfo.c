@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/time.h> 
+#include <time.h>
 #include "logger.h"
 #include "tcpServerUtil.h"
 #include "commandParser.h"
@@ -30,6 +31,7 @@ struct buffer {
 	size_t len;     // longitud del buffer
 	size_t from;    // desde donde falta escribir
 	size_t is_done;
+	int command;
 };
 
 /**
@@ -51,7 +53,10 @@ int udpSocket(int port);
   */
 void handleAddrInfo(int socket);
 
-static enum line_state parseMessage(struct buffer * buffer);
+int getTime(char * time_buffer);
+int getDate(char * date_buffer, char * format);
+
+static enum line_state parseMessage(struct buffer * buffer, int * command);
 
 int main(int argc , char *argv[])
 {
@@ -63,6 +68,9 @@ int main(int argc , char *argv[])
 	int max_sd;
 	struct sockaddr_in address;
 	int port = PORT;
+	char time_buffer[10] = {0};
+	char date_buffer[12] = {0};
+	char * default_date_format = "es";
 
 	if(argc > 1){
 		int arg_port = atoi(argv[1]);
@@ -241,14 +249,34 @@ int main(int argc , char *argv[])
 		for(i =0; i < max_clients; i++) {
             sd = client_socket[i];
             if (FD_ISSET(sd, &writefds) && bufferWrite[i].is_done) {
-                enum line_state state = parseMessage(bufferWrite + i);
+                enum line_state state = parseMessage(bufferWrite + i,&bufferWrite[i].command );
                 if(state == done_state){
-                    bufferWrite[i].from = 5;
-                    if(bufferWrite[i].len > 100){
-                        bufferWrite[i].buffer[98] = '\r';
-                        bufferWrite[i].buffer[99] = '\n';
-                        bufferWrite[i].len = 100;
-                    }
+					switch (bufferWrite[i].command)
+					{
+					case ECHO:
+						bufferWrite[i].from = 5;
+						if(bufferWrite[i].len > 100){
+							bufferWrite[i].buffer[98] = '\r';
+							bufferWrite[i].buffer[99] = '\n';
+							bufferWrite[i].len = 100;
+						}
+						break;
+					case GET_DATE:
+						if(getDate(date_buffer,default_date_format)!=-1){
+							bufferWrite[i].buffer = realloc(bufferWrite[i].buffer,sizeof(date_buffer));
+							memcpy(bufferWrite[i].buffer, date_buffer,sizeof(date_buffer));
+							bufferWrite[i].len = sizeof(date_buffer);
+						}
+						
+						break;
+					case GET_TIME:
+						if(getTime(time_buffer)!=-1){
+							strcpy(bufferWrite[i].buffer, time_buffer);
+						}
+						break;
+					default:
+						break;
+					}
 					
                     handleWrite(sd, bufferWrite + i, &writefds);
                 }else{
@@ -279,7 +307,6 @@ int main(int argc , char *argv[])
 					FD_CLR(sd, &writefds);
 					// Limpiamos el buffer asociado, para que no lo "herede" otra sesión
 					clear(bufferWrite + i);
-					printf("entre al caso read<=0\n");
 				}
 				else {
 					log(DEBUG, "Received %zu bytes from socket %d\n", valread, sd);
@@ -307,6 +334,7 @@ void clear( struct buffer * buffer) {
 	buffer->buffer = NULL;
 	buffer->from = buffer->len = 0;
 	buffer->is_done = 0;
+	buffer->command = 0;
 }
 
 // Hay algo para escribir?
@@ -439,69 +467,49 @@ void handleAddrInfo(int socket) {
 
 }
 
-static enum line_state parseMessage(struct buffer * buffer){
-	// line_parser_t * p = malloc(sizeof(*p));
-	// enum line_state state;
-    // parser_init(p);
-	// int error = 0;
-    // for(int i=0; i<buffer->len && i<MAX_LINE_LENGTH && !error; i++){
-	// 	state = parser_feed(p,buffer->buffer[i]);
-
-	// 	if(state == error_command || state == error_state){
-	// 		error = 1;
-	// 	}
-      
-    // }
-
-
-	// // if(state == error_command || state == error_state){
-	// // 	printf("entre a los errores :DDD");
-	// // 		const char ans[] = "invalid command\n";
-	// // 		// p->length = strlen(ans) + 1;
-	// // 		// int i;
-	// // 		// for(i=0 ; i<strlen(ans) ; i++){
-	// // 		// 	buffer->buffer[i]=ans[i];
-	// // 		// }
-	// // 		// buffer->buffer[i]=0;
-	// // 		memcpy(buffer->buffer,ans,strlen(ans)+1);
-	// // 		buffer->len = strlen(buffer->buffer);
-
+static enum line_state parseMessage(struct buffer * buffer, int * command){
 	
-
-	// // }else{
-	// 	//printf("en el argument tengo: %s\n",p->argument);
-	// 	memcpy(buffer->buffer,(char *)p->argument,strlen((char *)p->argument)+1);
-    // 	buffer->len = strlen((char *)p->argument);
-	// //}
-
-    // free(p);
-    // return state;
-
-	//------------------------ UN ANTES Y UN DESPUES --------------------
-	printf("dentro del parser recibi: %zu bytes y es:\n",buffer->len);
-	for (int j=buffer->from ; j<buffer->len ; j++){
-		putchar(buffer->buffer[j]);
-	}
-	putchar('\n');
-	if(buffer->buffer[0]=='\r'){
-		printf("encontre un /r\n");
-	}
 	line_parser_t * p = malloc(sizeof(*p));
     parser_init(p);
     enum line_state state;
     for(int i=0; i<buffer->len && i<MAX_LINE_LENGTH; i++){
-       // printf("%c\n", c[i]);
         state = parser_feed(p,buffer->buffer[i]);
        if(state == error_command || state == error_state){
-           printf("error\n");
            break;
        }
         
     }
-
-  printf("termine en el estado: %d\n",state);
+	if(p->state == done_state){
+		*command = p->current_command;
+	}
 	
-  free(p);
+  	free(p);
 	return state;
 }
 
+int getTime(char * time_buffer){
+	time_t t;
+	struct tm * time_info;
+	time(&t);
+	time_info = localtime(&t);
+	int bytes_read = sprintf(time_buffer,"%02d:%02d:%d\n",time_info->tm_hour,time_info->tm_min,time_info->tm_sec);
+	if(bytes_read > 0){
+		return bytes_read;
+	}
+	return -1;
+}
+
+int getDate(char * date_buffer, char * format){
+	time_t t;
+	struct tm * time_info;
+	time(&t);
+	time_info = localtime(&t);
+	int bytes_read;
+	
+	if(strcmp(format,"es") == 0){
+		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mday,time_info->tm_mon+1,time_info->tm_year+1900);
+	}else{
+		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mon+1,time_info->tm_mday,time_info->tm_year+1900);
+	}
+	return bytes_read;
+}

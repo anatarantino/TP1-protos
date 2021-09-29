@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-#define ECHO 0
-#define GET 1
+// #define ECHO 0
+// #define GET 1
 
 #define IS_ALPHA(x) (((x) >= 'a' && (x) <= 'z') || ((x) >= 'A' && (x) <= 'Z'))
 #define IS_USASCII(x) ((x)>= 0 && (x)<=127)
@@ -15,10 +15,18 @@ enum{
     MAX_LINE_LENGTH = 100
 };
 
+typedef enum commands{
+    ECHO = 1,
+    GET,
+    GET_DATE,
+    GET_TIME
+}commands;
+
 typedef enum line_state{
     command_state,
     argument_state,
     almost_done_state,
+    almost_done_get_state,
     done_state,
     error_state,
     error_command
@@ -29,7 +37,8 @@ typedef struct line_parser{
     int length;
     line_state state;
     uint8_t command[MAX_COMMAND_LENGTH+1];           
-    uint8_t argument[MAX_LINE_LENGTH-MAX_COMMAND_LENGTH-1+1];  
+    uint8_t argument[MAX_LINE_LENGTH-MAX_COMMAND_LENGTH-1+1];
+    commands current_command;  
 }line_parser_t;
 
 
