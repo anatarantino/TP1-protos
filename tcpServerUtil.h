@@ -4,7 +4,10 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
-
+enum dateFormat{
+	EN,
+	ES
+};
 // Create, bind, and listen a new TCP server socket
 int setupTCPServerSocket(const char *service);
 

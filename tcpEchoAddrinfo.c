@@ -55,14 +55,14 @@ int udpSocket(int port);
 void handleUdp(int socket);
 
 int getTime(char * time_buffer);
-int getDate(char * date_buffer, char * format);
+int getDate(char * date_buffer, int format);
 void toLowerString(char * str);
 
 static enum line_state parseMessage(struct buffer * buffer, int * command);
 
 //Para stats
 int connections = 0, incorrectLines = 0, correctLines = 0, incorrectDatagrams = 0;
-
+int default_date_format = ES;
 int main(int argc , char *argv[])
 {
 	int opt = TRUE;
@@ -75,7 +75,6 @@ int main(int argc , char *argv[])
 	int port = PORT;
 	char time_buffer[10] = {0};
 	char date_buffer[12] = {0};
-	char * default_date_format = "es";
 
 	if(argc > 1){
 		int arg_port = atoi(argv[1]);
@@ -414,7 +413,7 @@ void handleUdp(int socket) {
 
 	// Es bloqueante, deberian invocar a esta funcion solo si hay algo disponible en el socket    
 	n = recvfrom(socket, buffer, BUFFSIZE, 0, ( struct sockaddr *) &clntAddr, &len);
-	if (n>1 && buffer[n-1] == '\n') // Por si lo estan probando con netcat, en modo interactivo
+	if (n>=1 && buffer[n-1] == '\n') // Por si lo estan probando con netcat, en modo interactivo
 		n--;
 	buffer[n] = '\0';
 	log(DEBUG, "UDP received:%s", buffer );
@@ -424,15 +423,32 @@ void handleUdp(int socket) {
 	char bufferOut[BUFFSIZE];
 	bufferOut[0] = '\0';
 
+	//para usar en sscanf
+	char * set;
+	char * locale;
+	char * lang;
+
 	if(strcmp(buffer, "stats") == 0){
 
 		sprintf(bufferOut, "--STATS--\r\nTotal connections: %d\r\nIncorrect lines: %d\r\nCorrect lines: %d\r\nIncorrect datagrams: %d\r\n", connections, incorrectLines, correctLines, incorrectDatagrams);
-		sendto(socket, bufferOut, strlen(bufferOut), 0, (const struct sockaddr *) &clntAddr, sizeof(clntAddr));
+		sendto(socket, bufferOut, strlen(bufferOut), 0, (const struct sockaddr *) &clntAddr, len);
 		log(DEBUG, "UDP sent:%s", bufferOut );
-	}else{
+
+	}else if(sscanf(buffer, "%ms %ms %ms", &set, &locale, &lang) == 3){	//para no recorrer varias veces el string si es el mismo comando
+		if(strcmp(set, "set") == 0 && strcmp(locale, "locale") == 0) //si es un set locale
+		{
+			if(strcmp(lang, "es") == 0){
+				default_date_format = ES;
+			}else if(strcmp(lang, "en") == 0){
+				default_date_format = EN;
+			}
+
+		}
+		free(set); free(locale); free(lang); //las reservo el sscanf
+	}
+	else{
 		incorrectDatagrams++;
 	}
-
 	
 
 }
@@ -469,14 +485,14 @@ int getTime(char * time_buffer){
 	return -1;
 }
 
-int getDate(char * date_buffer, char * format){
+int getDate(char * date_buffer, int format){
 	time_t t;
 	struct tm * time_info;
 	time(&t);
 	time_info = localtime(&t);
 	int bytes_read;
 	
-	if(strcmp(format,"es") == 0){
+	if(format == ES){
 		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mday,time_info->tm_mon+1,time_info->tm_year+1900);
 	}else{
 		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mon+1,time_info->tm_mday,time_info->tm_year+1900);
