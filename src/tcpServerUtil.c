@@ -1,11 +1,4 @@
-#include <sys/socket.h>
-#include <errno.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <string.h>
-#include "logger.h"
-#include "util.h"
+#include "tcpServerUtil.h"
 
 #define MAXPENDING 5 // Maximum outstanding connection requests
 #define BUFSIZE 256
@@ -117,4 +110,39 @@ int handleTCPEchoClient(int clntSocket) {
 
 	close(clntSocket);
 	return 0;
+}
+
+int getTime(char * time_buffer){
+	time_t t;
+	struct tm * time_info;
+	time(&t);
+	time_info = localtime(&t);
+	int bytes_read = sprintf(time_buffer,"%02d:%02d:%02d\n",time_info->tm_hour,time_info->tm_min,time_info->tm_sec);
+	if(bytes_read > 0){
+		return bytes_read;
+	}
+	return -1;
+}
+
+int getDate(char * date_buffer, int format){
+	time_t t;
+	struct tm * time_info;
+	time(&t);
+	time_info = localtime(&t);
+	int bytes_read;
+	
+	if(format == ES){
+		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mday,time_info->tm_mon+1,time_info->tm_year+1900);
+	}else{
+		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mon+1,time_info->tm_mday,time_info->tm_year+1900);
+	}
+	return bytes_read;
+}
+
+void toLowerString(char * str){
+	int len = strlen(str);
+
+	for(int i =0; i<len; i++){
+		str[i]=tolower(str[i]);
+	}
 }

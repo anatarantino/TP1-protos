@@ -1,19 +1,4 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <netdb.h>
-#include <errno.h>
-#include <unistd.h>   
-#include <arpa/inet.h>    
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <sys/time.h> 
-#include <ctype.h>
-#include <time.h>
-#include "logger.h"
 #include "tcpServerUtil.h"
-#include "commandParser.h"
 
 #define max(n1,n2)     ((n1)>(n2) ? (n1) : (n2))
 
@@ -26,6 +11,7 @@
 #define BUFFSIZE 1024
 #define PORT_UDP 9996
 #define MAX_PENDING_CONNECTIONS   3    // un valor bajo, para realizar pruebas
+#define MAX_CHARACTERS 100
 
 struct buffer {
 	char * buffer;
@@ -65,16 +51,14 @@ int connections = 0, incorrectLines = 0, correctLines = 0, incorrectDatagrams = 
 int default_date_format = ES;
 int main(int argc , char *argv[])
 {
-	int opt = TRUE;
-	int master_socket[2];  // IPv4 e IPv6 (si estan habilitados)
-	int master_socket_size=0;
-	int addrlen , new_socket , client_socket[MAX_SOCKETS] , max_clients = MAX_SOCKETS , activity, i , sd;
+
+	int master_socket;
+	int new_socket , client_socket[MAX_SOCKETS] , max_clients = MAX_SOCKETS , activity, i , sd;
 	long valread;
 	int max_sd;
-	struct sockaddr_in address;
 	int port = PORT;
-	char time_buffer[10] = {0};
 	char date_buffer[12] = {0};
+	char time_buffer[10] = {0};
 
 	if(argc > 1){
 		int arg_port = atoi(argv[1]);
@@ -104,71 +88,9 @@ int main(int argc , char *argv[])
 	//initialise all client_socket[] to 0 so not checked
 	memset(client_socket, 0, sizeof(client_socket));
 
-	// TODO adaptar setupTCPServerSocket para que cree socket para IPv4 e IPv6 y ademas soporte opciones (y asi no repetor codigo)
-	
-	// socket para IPv4 y para IPv6 (si estan disponibles)
-	///////////////////////////////////////////////////////////// IPv4
-	if( (master_socket[master_socket_size] = socket(AF_INET , SOCK_STREAM , 0)) == 0) 
-	{
-		log(ERROR, "socket IPv4 failed");
-	} else {
-		//set master socket to allow multiple connections , this is just a good habit, it will work without this
-		if( setsockopt(master_socket[master_socket_size], SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) < 0 )
-		{
-			log(ERROR, "set IPv4 socket options failed");
-		}
-
-		//type of socket created
-		address.sin_family = AF_INET;
-		address.sin_addr.s_addr = INADDR_ANY;
-		address.sin_port = htons( port );
-
-		// bind the socket to localhost port 8888
-		if (bind(master_socket[master_socket_size], (struct sockaddr *)&address, sizeof(address))<0) 
-		{
-			log(ERROR, "bind for IPv4 failed");
-			close(master_socket[master_socket_size]);
-		}
-		else {
-			if (listen(master_socket[0], MAX_PENDING_CONNECTIONS) < 0)
-			{
-				log(ERROR, "listen on IPv4 socket failes");
-				close(master_socket[master_socket_size]);
-			} else {
-				log(DEBUG, "Waiting for TCP IPv4 connections on socket %d\n", master_socket[master_socket_size]);
-				master_socket_size++;
-			}
-		}
-	}
-	///////////////////////////////////////////////////////////// IPv6
-	struct sockaddr_in6 server6addr;
-	if ((master_socket[master_socket_size] = socket(AF_INET6, SOCK_STREAM, 0)) < 0)
-	{
-		log(ERROR, "socket IPv6 failed");
-	} else {
-		if (setsockopt(master_socket[master_socket_size], SOL_SOCKET, SO_REUSEADDR, (char *)&opt,sizeof(opt)) < 0)
-		{
-			log(ERROR, "set IPv6 socket options failed");
-		}
-		memset(&server6addr, 0, sizeof(server6addr));
-		server6addr.sin6_family = AF_INET6;
-		server6addr.sin6_port   = htons(port);
-		server6addr.sin6_addr   = in6addr_any;
-		if (bind(master_socket[master_socket_size], (struct sockaddr *)&server6addr,sizeof(server6addr)) < 0)
-		{
-			log(ERROR, "bind for IPv6 failed");
-			close(master_socket[master_socket_size]);
-		} else {
-			if (listen(master_socket[master_socket_size], MAX_PENDING_CONNECTIONS) < 0)
-			{
-				log(ERROR, "listen on IPv6 failed");
-				close(master_socket[master_socket_size]);
-			} else {
-				log(DEBUG, "Waiting for TCP IPv6 connections on socket %d\n", master_socket[master_socket_size]);
-				master_socket_size++;
-			}
-		}
-	}
+	char port_string[6] = {0};
+	sprintf(port_string,"%d",port);
+	master_socket = setupTCPServerSocket(port_string);
 
 	// Socket UDP para responder en base a addrInfo
 	int udpSock = udpSocket(port);
@@ -187,9 +109,9 @@ int main(int argc , char *argv[])
 		//clear the socket set
 		FD_ZERO(&readfds);
 
-		//add masters sockets to set
-		for (int sdMaster=0; sdMaster < master_socket_size; sdMaster++)
-			FD_SET(master_socket[sdMaster], &readfds);
+		//add master socket to set
+		
+		FD_SET(master_socket, &readfds);
 		FD_SET(udpSock, &readfds);
 
 		max_sd = udpSock;
@@ -226,34 +148,33 @@ int main(int argc , char *argv[])
 		}
 
 		//If something happened on the TCP master socket , then its an incoming connection
-		for (int sdMaster=0; sdMaster < master_socket_size; sdMaster++) {
-			int mSock = master_socket[sdMaster];
-			if (FD_ISSET(mSock, &readfds)) 
+		int mSock = master_socket;
+		if (FD_ISSET(mSock, &readfds)) 
+		{
+			if ((new_socket = acceptTCPConnection(mSock)) < 0)
 			{
-				if ((new_socket = acceptTCPConnection(mSock)) < 0)
-				{
-					log(ERROR, "Accept error on master socket %d", mSock);
-					continue;
-				}
+				log(ERROR, "Accept error on master socket %d", mSock);
+				continue;
+			}
 
-				// add new socket to array of sockets
-				for (i = 0; i < max_clients; i++) 
+			// add new socket to array of sockets
+			for (i = 0; i < max_clients; i++) 
+			{
+				// if position is empty
+				if( client_socket[i] == 0 )
 				{
-					// if position is empty
-					if( client_socket[i] == 0 )
-					{
-						connections++;
-						client_socket[i] = new_socket;
-						log(DEBUG, "Adding to list of sockets as %d\n" , i);
-						break;
-					}
+					connections++;
+					client_socket[i] = new_socket;
+					log(DEBUG, "Adding to list of sockets as %d\n" , i);
+					break;
 				}
 			}
 		}
+		
 
 		for(i =0; i < max_clients; i++) {
 			sd = client_socket[i];
-			if (FD_ISSET(sd, &writefds) && (bufferWrite[i].is_done || bufferWrite[i].len > 100)) {
+			if (FD_ISSET(sd, &writefds) && (bufferWrite[i].is_done || bufferWrite[i].len > MAX_CHARACTERS)) {
 				enum line_state state = parseMessage(bufferWrite + i,&bufferWrite[i].command );
 				if(state == done_state){
 					switch (bufferWrite[i].command)
@@ -261,10 +182,10 @@ int main(int argc , char *argv[])
 						case ECHO:
 						bufferWrite[i].from = 5;
 						correctLines++;
-						if(bufferWrite[i].len > 100){
-							bufferWrite[i].buffer[98] = '\r';
-							bufferWrite[i].buffer[99] = '\n';
-							bufferWrite[i].len = 100;
+						if(bufferWrite[i].len > MAX_CHARACTERS){
+							bufferWrite[i].buffer[MAX_CHARACTERS-2] = '\r';
+							bufferWrite[i].buffer[MAX_CHARACTERS-1] = '\n';
+							bufferWrite[i].len = MAX_CHARACTERS;
 						}
 						break;
 						case GET_DATE:
@@ -304,9 +225,7 @@ int main(int argc , char *argv[])
 				//Check if it was for closing , and also read the incoming message
 				if ((valread = read( sd , buffer, BUFFSIZE)) <= 0)
 				{
-					//Somebody disconnected , get his details and print
-					getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
-					log(INFO, "Host disconnected , ip %s , port %d \n" , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+					log(INFO, "Host disconnected\n");
 
 					//Close the socket and mark as 0 in list for reuse
 					close( sd );
@@ -471,39 +390,4 @@ static enum line_state parseMessage(struct buffer * buffer, int * command){
 	
 	free(p);
 	return state;
-}
-
-int getTime(char * time_buffer){
-	time_t t;
-	struct tm * time_info;
-	time(&t);
-	time_info = localtime(&t);
-	int bytes_read = sprintf(time_buffer,"%02d:%02d:%d\n",time_info->tm_hour,time_info->tm_min,time_info->tm_sec);
-	if(bytes_read > 0){
-		return bytes_read;
-	}
-	return -1;
-}
-
-int getDate(char * date_buffer, int format){
-	time_t t;
-	struct tm * time_info;
-	time(&t);
-	time_info = localtime(&t);
-	int bytes_read;
-	
-	if(format == ES){
-		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mday,time_info->tm_mon+1,time_info->tm_year+1900);
-	}else{
-		bytes_read = sprintf(date_buffer,"%02d/%02d/%d\n",time_info->tm_mon+1,time_info->tm_mday,time_info->tm_year+1900);
-	}
-	return bytes_read;
-}
-
-void toLowerString(char * str){
-	int len = strlen(str);
-
-	for(int i =0; i<len; i++){
-		str[i]=tolower(str[i]);
-	}
 }

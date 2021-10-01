@@ -1,10 +1,6 @@
 #ifndef PARSER_H
 #define PARSER_H
-
 #include <stdint.h>
-
-// #define ECHO 0
-// #define GET 1
 
 #define IS_ALPHA(x) (((x) >= 'a' && (x) <= 'z') || ((x) >= 'A' && (x) <= 'Z'))
 #define IS_USASCII(x) ((x)>= 0 && (x)<=127)

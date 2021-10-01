@@ -29,7 +29,7 @@ parser_destroy(struct parser *p) {
 }
 
 struct parser *
-parser_init(const unsigned *classes,
+parser_init2(const unsigned *classes,
             const struct parser_definition *def) {
     struct parser *ret = malloc(sizeof(*ret));
     if(ret != NULL) {
@@ -47,7 +47,7 @@ parser_reset(struct parser *p) {
 }
 
 const struct parser_event *
-parser_feed(struct parser *p, const uint8_t c) {
+parser_feed2(struct parser *p, const uint8_t c) {
     const unsigned type = p->classes[c];
 
     p->e1.next = p->e2.next = 0;
